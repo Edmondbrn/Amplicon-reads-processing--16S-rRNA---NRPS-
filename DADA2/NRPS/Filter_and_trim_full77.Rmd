@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Quality graph sequencing
 
 ```{r}
-.libPaths("/home/edmond/R/x86_64-pc-linux-gnu-library/4.3") # path to the R libraries (personnal environnement)
+# .libPaths("/home/edmond/R/x86_64-pc-linux-gnu-library/4.3")
 library(dada2); packageVersion("dada2")
 library(ggplot2)
 library(phyloseq); packageVersion("phyloseq")
