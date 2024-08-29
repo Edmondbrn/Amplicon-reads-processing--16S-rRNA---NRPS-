@@ -1,6 +1,6 @@
 
 # Amplicon reads processing
-This Github page is destined to store all the programs which were utilised for the analysis of an amplicon reads dataset. This includes 16S rRNA and Non Ribosomal Protein Synthetase. The complete data will not be included in this repository, only a preview will be. The DNA sequencing has been performed with Illumina technology.
+This Github page is destined to store all the programs which were utilised for the analysis of an amplicon reads dataset. This includes 16S rRNA and Non Ribosomal Protein Synthetase. The complete data will not be included in this repository, only a preview will be. The DNA sequencing has been performed with Illumina technology. This is the fundation of the analysis of the data presented in the article : [insert reference here]
 
 This repository will be ordered as follow:
 
@@ -21,7 +21,7 @@ After the denoising part, we could perform some analysis on the data. The alpha 
 
 I wanted to thank you Frederik Bak(f.bak@plen.ku.dk) who guided me during my analysis to achieve good results.
 
-## Authors
+## Author
 
 - [@Edmond BERNE](https://github.com/Edmondbrn/)
 
