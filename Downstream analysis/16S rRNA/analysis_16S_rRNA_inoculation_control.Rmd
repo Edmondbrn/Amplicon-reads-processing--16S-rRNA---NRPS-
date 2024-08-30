@@ -1,0 +1,373 @@
+---
+title: "16S rRNA analysis"
+author: "Edmond Berne"
+date: "2024-08-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loading_packages, include=FALSE}
+.libPaths("/home/edmond/R/x86_64-pc-linux-gnu-library/4.3") # path to the R libraries (personnal environnement)
+library(phyloseq)
+library(ampvis2)
+library(ggplot2)
+library(vegan)
+library(dplyr)
+library(tidyr)
+library(rprojroot)
+library(ggpubr)
+library(plotly)
+library(vegan)
+# format the html output
+library(kableExtra)
+```
+
+
+```{r set the working directory, include=FALSE}
+tryCatch({
+    root = find_root(is_rstudio_project | is_r_package | has_file("analysis_16S_rRNA_control.Rmd"))
+    setwd(root) # set the working directory to the location of this script
+}, error = function(e){
+    setwd("/home/edmond/scripts_frederik/16S_rRNA")
+    cat("Error with the automatic path detection, working directory set to: /home/edmond/scripts_frederik/16S_rRNA\n")
+}) 
+```
+
+```{r loading data, include = FALSE}
+
+# Import data
+df_feature = read.csv("ressources/otu_table_merged_transpose.csv")
+df_tax = read.csv("ressources/tax_table_merged.csv", sep = ";")
+df_meta = read.csv("ressources/metadata1.csv")
+
+df_feature = df_feature %>%
+  tibble::column_to_rownames("ASV") # format the table for phyloseq
+
+df_tax = df_tax %>% 
+  tibble::column_to_rownames("ASV")
+
+df_meta = df_meta %>% 
+  tibble::column_to_rownames("Sample_ID") 
+
+otu_mat = as.matrix(df_feature) # format again
+tax_mat = as.matrix(df_tax)
+OTU = otu_table(otu_mat, taxa_are_rows = TRUE)
+colnames(OTU)
+TAX = tax_table(tax_mat)
+samples = sample_data(df_meta)
+physeq = phyloseq(OTU, TAX, samples)
+physeq = subset_taxa(physeq, Kingdom == "Bacteria") # remove non-bacterial sequences
+# the line to filter the data to keep only the control samples
+physeq = subset_samples(physeq, Irrigation == "control")
+
+sample_76 = sample_data(samples["NG.33073_YG76", , drop = FALSE]) # I don't lnow why, but the sample 76 is not in the physeq object, so I included it manually
+otu_76 = otu_table(as.matrix(otu_mat[, "NG.33073_YG76"], ), taxa_are_rows = TRUE)
+colnames(otu_76) = "NG.33073_YG76"
+physeq@sam_data = merge_phyloseq(physeq@sam_data, sample_76)
+physeq@otu_table = merge_phyloseq(physeq@otu_table, otu_76)
+physeq@sam_data$Week = as.factor(physeq@sam_data$Week)
+ampvis_data = amp_load(physeq)
+saveRDS(physeq, file = "output/physeq_ctrl_SBW25_Mock_Water.rds")
+```
+
+
+### Rarefaction curves by treatment condition
+```{r rarefactioncurve, include = FALSE}
+p1 = amp_rarecurve(ampvis_data, color_by = "Treatment", stepsize = 100)
+```
+
+```{r rarefaction curves, include = TRUE}
+p1 = p1 + theme(axis.text = element_text(size = 14), 
+           axis.title = element_text(size = 20), 
+           legend.text = element_text(size = 15), 
+           legend.title = element_text(size = 15))+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = 14),
+  strip.text = element_text(size = 20)) + # increase facet tittle
+  labs(y = "Number of ASVs")+
+  theme_gray()
+ggplotly(p1)
+ggsave("output/rarefaction_curve.png", p1, width = 20, height = 10, units = "cm")
+```
+
+```{r rarefaction, include = FALSE}
+rarefied_physeq_list = list() # a list to store the rarefied phyloseq objects
+for (i in 1:100) {
+  rarefied_physeq = rarefy_even_depth(physeq, sample.size = 9000, rngseed = i) # loss of sample 80 with around 100 reads
+  rarefied_physeq_list[[i]] <- rarefied_physeq
+  cat("Loop number: \r", i, "out of 100\n")
+}
+otu_tables = lapply(rarefied_physeq_list, function(x) otu_table(x)) # regroup all the otu_tables in a list
+
+cat("All the rarefied phyloseq objects have been created\n")
+cat("Converting otu_tables to dataframes...\n")
+
+for (i in 1:length(otu_tables)) { # convert all the otu_tables to dataframes
+  otu_tables[[i]] = as.data.frame(otu_tables[[i]])
+  otu_tables[[i]]$ASV = rownames(otu_tables[[i]])
+  cat("Loop number: \r", i, "out of 100")
+}
+
+cat("Dataframes created\n")
+cat("Concatenating dataframes...\n")
+
+df_rare = as.data.frame(otu_tables[[1]]) # create a dataframe with the first otu_table for later
+for (i in 2:length(otu_tables)) { # Concatenate all the dataframes vertically
+  df_rare = rbind(df_rare, as.data.frame(otu_tables[[i]]))
+  cat("Loop number: \r", i, "out of 100")
+}
+cat("Loope finished\n")
+
+cat("Rarefied dataframe created")
+cat("Calculating mean and median...")
+
+# Regroup rows by NAME and calculate the mean and median
+df_rare_mean = df_rare %>% group_by(ASV) %>% summarise(across(everything(), list(mean = mean)))
+df_rare_median = df_rare %>% group_by(ASV) %>% summarise(across(everything(), list(median = median)))
+
+names(df_rare_mean) = sub("_mean", "", names(df_rare_mean)) # Remove mean and median to column names
+names(df_rare_median) = sub("_median", "", names(df_rare_median))
+
+df_rare_mean <- df_rare_mean %>%
+  tibble::column_to_rownames("ASV")
+
+df_rare_median <- df_rare_median %>%
+  tibble::column_to_rownames("ASV")
+
+df_rare_mean = otu_table(df_rare_mean, taxa_are_rows = TRUE)
+df_rare_median = otu_table(df_rare_median, taxa_are_rows = TRUE)
+Rarefied_physeq_mean = phyloseq(df_rare_mean, TAX, samples) # create another phyloseq object with rarefied data as OTU table
+Rarefied_physeq_median = phyloseq(df_rare_median, TAX, samples)
+
+otu_data = round(otu_table(Rarefied_physeq_mean))
+# In case where we have float number in mean (for richness), we round the number to have an integer
+Rarefied_physeq_mean_rounded <- phyloseq(otu_data, TAX, samples)
+
+saveRDS(Rarefied_physeq_mean_rounded, file = "output/Rarefied_physeq_mean_rounded_CONTROL_SBW25_Mock_Water.rds")
+saveRDS(Rarefied_physeq_median, file = "output/Rarefied_physeq_median_CONTROL_SBW25_Mock_Water.rds")
+saveRDS(df_rare_mean, file = "output/df_rare_mean_CONTROL_SBW25_Mock_Water.rds")
+```
+
+### Descriptive statistics 
+    *(based on nonchim reads)*
+```{r descriptive statistics, include = TRUE}
+reads_data = read.csv("ressources/track.txt", sep = "\t")
+number_ASV = colSums(df_feature)
+reads_data = cbind(reads_data, df_meta) # add metadata to the reads data
+reads_data$ASV = number_ASV
+
+regroup = function(var = NULL){
+  table = reads_data %>% 
+      filter(Irrigation == "control") 
+  if (!is.null(var))
+    table = table %>% group_by_at(vars(var))
+  table = table %>% 
+      summarise(mean_reads = mean(nonchim), 
+                median_reads = median(nonchim), 
+                reads_number = sum(nonchim),
+                min_reads = min(nonchim), 
+                max_reads = max(nonchim), 
+                ASV_sum = sum(ASV), 
+                samples = n())
+  table = as.data.frame(table)
+  table = table %>%
+    kable("html", caption = "Descriptive Statistics") %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "responsive"), full_width = F)
+  
+  return(table)
+}
+regroup()
+regroup("Treatment")
+```
+
+
+### Loading data
+```{r load rarefied data, include = TRUE}
+physeq_rare_mean_rounded = readRDS("output/Rarefied_physeq_mean_rounded_CONTROL_SBW25_Mock_Water.rds")
+physeq_rare_median = readRDS("output/Rarefied_physeq_median_CONTROL_SBW25_Mock_Water.rds")
+physeq_rare_mean = readRDS("output/df_rare_mean_CONTROL_SBW25_Mock_Water.rds")
+```
+
+### Heatmap
+
+```{r heatmap, include = TRUE}
+amp_heatmap(ampvis_data, normalise = T, group_by = "Treatment", tax_show = 20, tax_add = "Genus", tax_aggregate = "OTU") # use amp_filter_samples(data, condition) to subset the data before the heatmap if necessary
+```
+The results are very strange here. i dont' know what does ampvis2, but the proportions are incorrect.
+
+
+### Taxonomic composition
+
+```{r taxonomic composition, include = FALSE}
+OTU_per = transform_sample_counts(OTU, function(x) x / sum(x) * 100) # transform the data to percentage
+OTU_per = t(OTU_per) # transpose the data
+OTU_per = OTU_per[rownames(OTU_per) %in% c("NG.33073_YG76", "NG.33073_YG77", "NG.33073_YG78", "NG.33073_YG79", "NG.33073_YG80", "NG.33073_YG81"),] # keep only the ASV present in the rarefied data
+OTU_per = as.data.frame(OTU_per) # convert the matrix to a dataframe
+OTU_per$Treatment = physeq@sam_data$Treatment # add the metadata to the data
+numeric_cols = sapply(OTU_per, is.numeric)
+
+OTU_group = OTU_per %>% 
+  group_by(Treatment) %>% 
+  summarise(across(where(is.numeric), list(mean = mean), .names = "{col}_{fn}"))
+  
+OTU_group = t(OTU_group)
+colnames(OTU_group) = c("SBW25", "Water", "Mock")
+OTU_group = as.data.frame(OTU_group[-1,])
+OTU_group$family = df_tax$Family
+OTU_group$genus = df_tax$Genus
+OTU_group$ASV = gsub("_mean", "", rownames(OTU_group))
+
+OTU_group = OTU_group %>%
+    pivot_longer(cols = c(-ASV, -genus, -family), names_to = "Treatment", values_to = "Proportion") %>%
+    filter(Proportion > 0) # remove the 0 values
+
+class(OTU_group$Proportion) = "numeric" # convert the proportion to numeric variable (character before)
+write.table(OTU_group, "output/OTU_group_CONTROL.csv", sep = ";", row.names = F)
+
+OTU_group = OTU_group %>%
+    group_by(Treatment, genus, family) %>%
+    summarise(Proportion = sum(Proportion)) %>%
+    filter(round(Proportion) > 0) # sum the proportion for each ASV
+```
+
+``` {r taxonomic function, include = FALSE}
+
+tax_proportion = function(var){
+  p = ggplot(OTU_group, aes_string(x = "2", y = "Proportion", fill = var)) +
+  geom_bar(stat = "identity", width = 1, color = "black") +
+  coord_polar(theta = "y") + # line to remove to have a stacked barplot
+  facet_grid(~ Treatment) +
+  xlim(0.5, 2.5) +
+  geom_text(aes(label = paste0(round(Proportion, 1), "%")), 
+            position = position_stack(vjust = 0.5)) +
+  theme_void() +
+  theme(legend.position = "right", strip.text = element_text(size = 12), legend.text = element_text(size = 12)) +
+  labs(fill = "ASV")
+  ggsave(paste0("output/tax_proportion_CONTROL_", var, ".png"))
+  return(p)
+}
+```
+
+```{r taxonomic plots, include = TRUE, fig.width=15, fig.height=12}
+tax_proportion("genus")
+tax_proportion("family")
+```
+
+### Alpha diversity
+
+```{r alpha diversity function, include = FALSE}
+
+alpha_box_plot_shannon = function(comparizon, data, name){
+  p = ggplot(data = data, aes(x = Treatment, y = Shannon, color = Treatment))+
+    geom_point() +
+    facet_grid(~ Week, scales = "free") + # organise the plot by week
+    theme(axis.text.x = element_text(hjust = 1, size = 20, angle = 45),  
+          axis.text.y = element_text(size = 20),  
+          legend.title = element_text(size = 20),
+          plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+          axis.title.x = element_text(size = 24),  
+          axis.title.y = element_text(size = 24)) +  
+    ylim(c(min(data$Shannon) - 0.2, max(data$Shannon) + 0.5)) +
+    labs(x = "Sub sample", y = "Shannon diversity", fill = "Irigation")
+   ggsave(paste0("output/alpha_diversity_CONTROL_",name ,"_shannon.png"), plot = p, width = 25, height = 15, units = "cm")
+   return(p)
+}
+
+alpha_box_plot_chao = function(comparizon, data, name){
+  p = ggplot(data = data, aes(x = Treatment, y = Chao1, color = Treatment))+
+    geom_point() +
+    facet_grid(~ Week, scales = "free") + # organise the plot by week
+    theme(axis.text.x = element_text(hjust = 1, size = 20, angle = 45),  
+          axis.text.y = element_text(size = 20),  
+          legend.title = element_text(size = 20),
+          plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+          axis.title.x = element_text(size = 24),  
+          axis.title.y = element_text(size = 24)) +  
+    labs(x = "Sub sample", y = "Chao Richness", fill = "Irrigation")
+  ggsave(paste0("output/richness_CONTROL_",name ,"_chao1.png"), plot = p, width = 25, height = 15, units = "cm")
+  return(p)
+}
+```
+
+```{r alpha diversity_loading data, include = FALSE}
+alpha_div = estimate_richness(physeq_rare_mean_rounded, measures = c("Shannon", "Chao1")) # compute alpha diversity
+alpha_div = cbind(alpha_div, physeq_rare_mean_rounded@sam_data) # add the factor to the new table
+```
+
+```{r alpha diversity_loading plots, include = FALSE}
+p2 = alpha_box_plot_shannon(comparison, alpha_div, "control")
+p3 = alpha_box_plot_chao(comparison, alpha_div, "control")
+```
+
+#### Shannon diversity
+```{r alpha diversity_loading shannon, include = TRUE, fig.width=10, fig.height=8}
+ggplotly(p2)
+```
+
+#### Richness
+```{r alpha diversity_loading richness, include = TRUE, fig.width=10, fig.height=8}
+ggplotly(p3)
+```
+
+
+### Beta diversity
+```{r beta diversity Function, include = FALSE, fig.width=10, fig.height=8}
+plot_pcoa = function(data, color, cluster, filename){
+    list_output = list() # to return the plot and the beta diversity results
+    print("Computing PCoA")
+    physeq.ord_pcoa = ordinate(data, "PCoA", "bray")
+    print("Plotting PCoA")
+    p3 = plot_ordination(data, physeq.ord_pcoa, color=color,  
+                  title="Beta diversity study using PCoA method (Bray-Curtis dissimilarity)") +
+          theme(axis.text = element_text(size = 15), axis.title = element_text(size = 25), 
+                legend.text = element_text(size = 16), legend.title = element_text(size = 17))
+
+    # add the elipse on the plot
+    p3 = p3 + stat_ellipse(aes_(color = as.name(cluster), fill = as.name(cluster)), geom = "polygon", show.legend = T, linetype = "dashed", linewidth = 1, alpha = 0.1) 
+    ggsave(filename)
+    list_output[[1]] = p3
+    list_output[[2]] = physeq.ord_pcoa
+    return(list_output)
+}
+
+```
+
+```{r beta diversity PCoA plot, include = TRUE, fig.width=10, fig.height=8}
+p4 = plot_pcoa(physeq, "Treatment", "Treatment", "output/PCoA_16S_rRNA_cluster.png")
+```
+
+```{r, include = TRUE}
+p4[[1]]
+```
+
+### PERMANOVA
+```{r permANOVA, include = TRUE}
+data = as.data.frame((t(physeq@otu_table))) # convert the otu_table to a dataframe to perform the permANOVA
+
+metdata = physeq@sam_data
+data = cbind(data, physeq@sam_data)
+data$Irrigation = as.factor(data$Irrigation)
+data$Week = as.factor(data$Week)
+data$Compartments = as.factor(data$Compartments)
+data$Treatment = as.factor(data$Treatment)
+data$Group= as.factor(data$Group)
+# remove the 6 last columns (metadata variable)
+data_corr = data[, -((ncol(data)-6):ncol(data))]
+bray_dist = vegdist(data_corr, method = "bray")
+model = adonis2(bray_dist ~ Treatment , data = data, permutations = 999, by = "terms")
+model 
+```
+
+
+### Summary table (alpha/beta diversity values)
+
+```{r summary table, include = TRUE}
+pcoa_res = as.data.frame(p4[[2]]$vectors[,1:2]) # get the value for the two first axis of the PCoA
+data_final = merge(alpha_div, pcoa_res, by = "row.names")
+
+data_final %>% select(Row.names, Shannon, Chao1, Axis.1, Axis.2) %>% # format the output for html file
+  kable("html", caption = "Summary table") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "responsive"), full_width = F)
+```
