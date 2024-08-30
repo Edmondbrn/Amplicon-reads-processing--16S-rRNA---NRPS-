@@ -34,7 +34,7 @@ tryCatch({
     setwd(root) # set the working directory to the location of this script
 }, error = function(e){
     setwd("/home/edmond/scripts_frederik/NRPS")
-    cat("Error with the automatic path detection, working directory set to: /home/edmond/scripts_frederik/NRPS\n")
+    cat("Error with the automatic path detection, working directory set to default ", getwd() )
 }) 
 ```
 

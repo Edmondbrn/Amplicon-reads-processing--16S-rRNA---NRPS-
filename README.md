@@ -17,6 +17,40 @@ To evaluate the accuracy of NRPS primers used during the sequencing, reads have 
 After the denoising part, we could perform some analysis on the data. The alpha diversity has been computed for each group according to Week and Irrigation variable. For the beta diversity, a PCoA plot has been done based on Bray-Curtis dissimilarity matrix. The ASVs abundance analysis has been performed thanks to the `corncob` package.
 
 
+## Versions used
+
+- R (v4.3.1)
+
+| Package      | Version  |
+|--------------|----------|
+| dada2        | 1.32.0   |
+| Rcpp         | 1.0.13   |
+| readxl       | 1.4.3    |
+| ggbeeswarm   | 0.7.2    |
+| kableExtra   | 1.4.0    |
+| plotly       | 4.10.4   |
+| ggpubr       | 0.6.0    |
+| rprojroot    | 2.0.4    |
+| dplyr        | 1.1.4    |
+| vegan        | 2.6-6.1  |
+| lattice      | 0.22-6   |
+| permute      | 0.9-7    |
+| ampvis2      | 2.8.9    |
+| ggplot2      | 3.5.1    |
+| phyloseq     | 1.48.0   |
+
+- python3 (v3.10)
+
+| Package       | Version |
+|---------------|---------|
+| numpy         | 1.26.4  |
+| pandas        | 2.2.1  |
+| matplotlib    | 3.4.3   |
+| scikit-learn  | 1.4.2  |
+
+- java (OpenJDK 11)
+
+
 ## Acknowledgement
 
 I wanted to thank you Frederik Bak(f.bak@plen.ku.dk) who guided me during my analysis to achieve good results.
